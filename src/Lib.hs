@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 module Lib where
 
-import qualified GitHub.Data.PullRequests as GitHub
+import qualified GitHub.Data as GitHub
 import qualified GitHub.Endpoints.PullRequests as GitHub
 import qualified Data.Vector as V
 import qualified Data.Text.IO as T
@@ -10,7 +11,7 @@ import qualified GitHub.Auth as Auth
 import qualified Data.ByteString.Char8 as BS8
 import Data.Monoid ((<>))
 import GitHub.Request
-import System.Environment (lookupEnv)
+import System.Environment (lookupEnv, getArgs)
 import System.Exit (exitFailure)
 
 getAuth :: IO (Maybe Auth.Auth)
@@ -18,6 +19,16 @@ getAuth = do
   mToken <- lookupEnv "GITHUB_TOKEN"
   return $ fmap fn mToken
     where fn t = Auth.OAuth (BS8.pack t)
+
+getNameAndRepo :: IO (Maybe (T.Text, T.Text))
+getNameAndRepo =
+  getArgs >>=
+  \case
+    (name:repo:_) -> return $ Just (T.pack name, T.pack repo)
+    _ -> return Nothing
+
+usage :: String
+usage = "Usage: appoint USERNAME|OWNERNAME REPO"
 
 main :: IO ()
 main = do
@@ -27,7 +38,12 @@ main = do
       Nothing -> putStrLn "You must set GITHUB_TOKEN env var" >> exitFailure
       Just a -> return a
 
-  possiblePullRequests <- pullRequestsFor auth' "xxx" "xxx"
+  pair <- getNameAndRepo
+  pair' <- case pair of
+      Nothing -> putStrLn usage >> exitFailure
+      Just (a, b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
+
+  possiblePullRequests <- uncurry (pullRequestsFor auth') pair'
   case possiblePullRequests of
     (Left err) -> putStrLn ("Error: " ++ show err) >> exitFailure
     (Right pullRequests) -> T.putStrLn $ condense pullRequests
