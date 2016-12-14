@@ -9,6 +9,7 @@ import qualified Data.Text.IO as T
 import qualified Data.Text as T
 import qualified GitHub.Auth as Auth
 import qualified Data.ByteString.Char8 as BS8
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import GitHub.Request
 import System.Environment (lookupEnv, getArgs)
@@ -33,20 +34,20 @@ usage = "Usage: appoint USERNAME|OWNERNAME REPO"
 main :: IO ()
 main = do
   auth <- getAuth
-  auth' <-
-    case auth of
-      Nothing -> putStrLn "You must set GITHUB_TOKEN env var" >> exitFailure
-      Just a -> return a
-
+  let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
   pair <- getNameAndRepo
-  pair' <- case pair of
+  pair' <-
+    case pair of
       Nothing -> putStrLn usage >> exitFailure
-      Just (a, b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
-
-  possiblePullRequests <- uncurry (pullRequestsFor auth') pair'
+      Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
+  possiblePullRequests <- uncurry handler pair'
   case possiblePullRequests of
-    (Left err) -> putStrLn ("Error: " ++ show err) >> exitFailure
-    (Right pullRequests) -> T.putStrLn $ condense pullRequests
+    Left err -> putStrLn (mkErrorMsg auth err) >> exitFailure
+    Right pullRequests -> T.putStrLn $ condense pullRequests
+
+mkErrorMsg :: Show a => Maybe Auth.Auth -> a -> String
+mkErrorMsg Nothing _ = "Error while making unauthenticated request. Perhaps this repo is private in which case you must set the GITHUB_TOKEN env var."
+mkErrorMsg (Just _) err = show err
 
 condense ::V.Vector GitHub.SimplePullRequest -> T.Text
 condense = V.foldl' (\t pr -> formatPullRequest pr `T.snoc` '\n' <> t) ""
@@ -55,13 +56,12 @@ formatPullRequest :: GitHub.SimplePullRequest -> T.Text
 formatPullRequest pullRequest =
   T.unlines $ filter (/= "")
     [ GitHub.simplePullRequestTitle pullRequest
-    , maybe "" (T.take 50) (GitHub.simplePullRequestBody pullRequest)
+    , fromMaybe "" (GitHub.simplePullRequestBody pullRequest)
     , displayUser $ GitHub.simplePullRequestUser pullRequest
     , T.pack . show $ V.map displayUser (GitHub.simplePullRequestAssignees pullRequest)
     , T.pack . show $ GitHub.simplePullRequestCreatedAt pullRequest
     , T.pack . show $ GitHub.simplePullRequestUpdatedAt pullRequest
-    , GitHub.getUrl $ GitHub.simplePullRequestHtmlUrl pullRequest
-    , ""]
+    , GitHub.getUrl $ GitHub.simplePullRequestHtmlUrl pullRequest]
 
 displayUser :: GitHub.SimpleUser -> T.Text
 displayUser = GitHub.untagName . GitHub.simpleUserLogin
