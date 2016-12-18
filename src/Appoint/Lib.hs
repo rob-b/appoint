@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-module Lib where
+module Appoint.Lib where
 
 import qualified GitHub.Data as GitHub
 import qualified GitHub.Endpoints.PullRequests as GitHub
@@ -9,11 +9,11 @@ import qualified Data.Text.IO as T
 import qualified Data.Text as T
 import qualified GitHub.Auth as Auth
 import qualified Data.ByteString.Char8 as BS8
-import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import GitHub.Request
 import System.Environment (lookupEnv, getArgs)
 import System.Exit (exitFailure)
+import Appoint.Wrap
 
 getAuth :: IO (Maybe Auth.Auth)
 getAuth = do
@@ -46,7 +46,9 @@ main = do
     Right pullRequests -> T.putStrLn $ condense pullRequests
 
 mkErrorMsg :: Show a => Maybe Auth.Auth -> a -> String
-mkErrorMsg Nothing _ = "Error while making unauthenticated request. Perhaps this repo is private in which case you must set the GITHUB_TOKEN env var."
+mkErrorMsg Nothing _ =
+  "Error while making unauthenticated request. " <>
+  "Perhaps this repo is private in which case you must set the GITHUB_TOKEN env var."
 mkErrorMsg (Just _) err = show err
 
 condense ::V.Vector GitHub.SimplePullRequest -> T.Text
@@ -56,12 +58,23 @@ formatPullRequest :: GitHub.SimplePullRequest -> T.Text
 formatPullRequest pullRequest =
   T.unlines $ filter (/= "")
     [ GitHub.simplePullRequestTitle pullRequest
-    , fromMaybe "" (GitHub.simplePullRequestBody pullRequest)
-    , displayUser $ GitHub.simplePullRequestUser pullRequest
-    , T.pack . show $ V.map displayUser (GitHub.simplePullRequestAssignees pullRequest)
-    , T.pack . show $ GitHub.simplePullRequestCreatedAt pullRequest
-    , T.pack . show $ GitHub.simplePullRequestUpdatedAt pullRequest
+    , T.replicate (T.length $ GitHub.simplePullRequestTitle pullRequest) "="
+    , maybe "" (wrapParagraph 72) (GitHub.simplePullRequestBody pullRequest)
+    , "Author: " <> displayUser (GitHub.simplePullRequestUser pullRequest)
+    , assignedTo (GitHub.simplePullRequestAssignees pullRequest)
+    -- , T.pack . show $ GitHub.simplePullRequestCreatedAt pullRequest
+    -- , T.pack . show $ GitHub.simplePullRequestUpdatedAt pullRequest
     , GitHub.getUrl $ GitHub.simplePullRequestHtmlUrl pullRequest]
+
+assignedTo :: V.Vector GitHub.SimpleUser -> T.Text
+assignedTo as
+  | not (V.null as) = "Assigned to: " <> displayAssignees as
+  | otherwise = ""
+
+displayAssignees :: V.Vector GitHub.SimpleUser -> T.Text
+displayAssignees as
+  | not (V.null as) = T.intercalate ", " (V.toList (V.map displayUser as))
+  | otherwise = ""
 
 displayUser :: GitHub.SimpleUser -> T.Text
 displayUser = GitHub.untagName . GitHub.simpleUserLogin

@@ -1,6 +1,3 @@
 module Main (main) where
 
-import Lib (main)
-
--- main :: IO ()
--- main = _
+import Appoint.Lib (main)

@@ -15,7 +15,8 @@ library:
   source-dirs: src
   ghc-options: -Wall
   exposed-modules:
-  - Lib
+  - Appoint.Lib
+  - Appoint.Wrap
   dependencies:
   - base >=4.7 && <5
   - text
@@ -23,6 +24,7 @@ library:
   - github
   - vector
   - transformers
+  - rainbow
 executables:
   appoint:
     main: Main.hs
@@ -44,3 +46,4 @@ tests:
     - appoint
     - hspec
     - QuickCheck
+    - text
