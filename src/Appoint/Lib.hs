@@ -9,11 +9,37 @@ import qualified Data.Text.IO as T
 import qualified Data.Text as T
 import qualified GitHub.Auth as Auth
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString as BS
+import Appoint.Wrap
+import Data.List (foldl')
+import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
+import GitHub.Data.Definitions (Error)
 import GitHub.Request
+import Rainbow
 import System.Environment (lookupEnv, getArgs)
 import System.Exit (exitFailure)
-import Appoint.Wrap
+
+data OutputKind = Plain | Colour
+
+data Output = Output
+  { oTitle :: T.Text
+  , oBody :: T.Text
+  , oAuthor :: T.Text
+  , oAssignees :: T.Text
+  , oURL :: T.Text
+  } deriving (Show)
+
+main :: IO ()
+main = do
+  auth <- getAuth
+  let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
+  pair <- getNameAndRepo
+  pair' <-
+    case pair of
+      Nothing -> putStrLn usage >> exitFailure
+      Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
+  doRequest handler pair' auth >>= printPRs Colour
 
 getAuth :: IO (Maybe Auth.Auth)
 getAuth = do
@@ -31,19 +57,48 @@ getNameAndRepo =
 usage :: String
 usage = "Usage: appoint USERNAME|OWNERNAME REPO"
 
-main :: IO ()
-main = do
-  auth <- getAuth
-  let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
-  pair <- getNameAndRepo
-  pair' <-
-    case pair of
-      Nothing -> putStrLn usage >> exitFailure
-      Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
-  possiblePullRequests <- uncurry handler pair'
+printPRs :: OutputKind -> V.Vector GitHub.SimplePullRequest -> IO ()
+printPRs Colour prs = do
+  let colourisedPrs = map (colourOutput . toOutput) (V.toList prs)
+  mapM_ printChunks colourisedPrs
+printPRs Plain prs = do
+  let plainPrs = map (plainOutput . toOutput) (V.toList prs)
+  mapM_ T.putStrLn plainPrs
+
+plainOutput :: Output -> T.Text
+plainOutput o =
+  foldl' (\a b -> a <> b <> "\n") "" [ x | x <- fields, x /= ""]
+  where
+    fields = [ oTitle o , T.replicate (T.length $ oTitle o) "=", oAuthor o , oAssignees o , oBody o]
+
+colourOutput :: Output -> [Maybe (Chunk T.Text)]
+colourOutput o =
+  [ Just $ chunk (oTitle o) <> chunk "\n" & fore green
+  , Just $ chunk (oAuthor o) <> chunk "\n" & fore yellow
+  , assigneesChunk
+  , Just $ chunk (oBody o) <> chunk "\n"]
+  where
+    assigneesChunk =
+      if T.null (oAssignees o)
+        then Nothing
+        else Just $ chunk (oAssignees o) <> chunk "\n" & fore brightYellow
+
+printChunks :: Renderable a => [Maybe (Chunk a)] -> IO ()
+printChunks cs =
+  mapM_ BS.putStr . chunksToByteStrings toByteStringsColors256 $ catMaybes cs
+
+type Handler a b = (a -> b -> IO (Either Error (V.Vector GitHub.SimplePullRequest)))
+
+doRequest
+  :: Handler a b
+  -> (a, b)
+  -> Maybe Auth.Auth
+  -> IO (V.Vector GitHub.SimplePullRequest)
+doRequest handler p auth = do
+  possiblePullRequests <- uncurry handler p
   case possiblePullRequests of
     Left err -> putStrLn (mkErrorMsg auth err) >> exitFailure
-    Right pullRequests -> T.putStrLn $ condense pullRequests
+    Right pullRequests -> return pullRequests
 
 mkErrorMsg :: Show a => Maybe Auth.Auth -> a -> String
 mkErrorMsg Nothing _ =
@@ -51,20 +106,17 @@ mkErrorMsg Nothing _ =
   "Perhaps this repo is private in which case you must set the GITHUB_TOKEN env var."
 mkErrorMsg (Just _) err = show err
 
-condense ::V.Vector GitHub.SimplePullRequest -> T.Text
-condense = V.foldl' (\t pr -> formatPullRequest pr `T.snoc` '\n' <> t) ""
-
-formatPullRequest :: GitHub.SimplePullRequest -> T.Text
-formatPullRequest pullRequest =
-  T.unlines $ filter (/= "")
-    [ GitHub.simplePullRequestTitle pullRequest
-    , T.replicate (T.length $ GitHub.simplePullRequestTitle pullRequest) "="
-    , maybe "" (wrapParagraph 72) (GitHub.simplePullRequestBody pullRequest)
-    , "Author: " <> displayUser (GitHub.simplePullRequestUser pullRequest)
-    , assignedTo (GitHub.simplePullRequestAssignees pullRequest)
-    -- , T.pack . show $ GitHub.simplePullRequestCreatedAt pullRequest
-    -- , T.pack . show $ GitHub.simplePullRequestUpdatedAt pullRequest
-    , GitHub.getUrl $ GitHub.simplePullRequestHtmlUrl pullRequest]
+toOutput :: GitHub.SimplePullRequest -> Output
+toOutput pullRequest =
+  Output
+  { oTitle = GitHub.simplePullRequestTitle pullRequest
+  , oBody =
+    maybe "" (wrapParagraph 72) (GitHub.simplePullRequestBody pullRequest)
+  , oAuthor =
+    "Author: " <> displayUser (GitHub.simplePullRequestUser pullRequest)
+  , oAssignees = assignedTo (GitHub.simplePullRequestAssignees pullRequest)
+  , oURL = GitHub.getUrl $ GitHub.simplePullRequestHtmlUrl pullRequest
+  }
 
 assignedTo :: V.Vector GitHub.SimpleUser -> T.Text
 assignedTo as
