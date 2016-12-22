@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ParallelListComp #-}
 module Appoint.Lib where
 
 import qualified GitHub.Data as GitHub
@@ -39,7 +40,9 @@ main = do
     case pair of
       Nothing -> putStrLn usage >> exitFailure
       Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
-  doRequest handler pair' auth >>= printPRs Colour
+  prs <- doRequest handler pair' auth
+  printTitlesForSelection prs
+  -- printPRs Colour prs
 
 getAuth :: IO (Maybe Auth.Auth)
 getAuth = do
@@ -56,6 +59,19 @@ getNameAndRepo =
 
 usage :: String
 usage = "Usage: appoint USERNAME|OWNERNAME REPO"
+
+printTitlesForSelection :: V.Vector GitHub.SimplePullRequest -> IO ()
+printTitlesForSelection prs = T.putStrLn $ T.intercalate "\n" (selectUnassigned (V.toList prs))
+  where
+    selectUnassigned :: [GitHub.SimplePullRequest] -> [T.Text]
+    selectUnassigned prs' = [uncurry imapfn (ix, pr) | pr <- prs', hasAssignees pr | ix <- (map succ [0..])]
+    hasAssignees :: GitHub.SimplePullRequest -> Bool
+    hasAssignees pr = V.null $ GitHub.simplePullRequestAssignees pr
+    imapfn :: Integer -> GitHub.SimplePullRequest -> T.Text
+    imapfn ix pr = redic ix <> " -> " <> GitHub.simplePullRequestTitle pr
+
+    redic :: Integer -> T.Text
+    redic i = T.pack(show i)
 
 printPRs :: OutputKind -> V.Vector GitHub.SimplePullRequest -> IO ()
 printPRs Colour prs = do
