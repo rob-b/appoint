@@ -42,6 +42,7 @@ library
     , github
     , vector
     , transformers
+    , time
     , rainbow
 
 executable appoint

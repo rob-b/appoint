@@ -15,6 +15,7 @@ import Appoint.Wrap
 import Data.List (foldl')
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
+import Data.Time.Clock (UTCTime)
 import GitHub.Data.Definitions (Error)
 import GitHub.Request
 import Rainbow
@@ -28,8 +29,10 @@ data Output = Output
   , oBody :: T.Text
   , oAuthor :: T.Text
   , oAssignees :: T.Text
+  , oAssigneeCount :: Int
+  , oCreated :: UTCTime
   , oURL :: T.Text
-  } deriving (Show)
+  } deriving (Show, Eq)
 
 main :: IO ()
 main = do
@@ -41,8 +44,8 @@ main = do
       Nothing -> putStrLn usage >> exitFailure
       Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
   prs <- doRequest handler pair' auth
-  printTitlesForSelection prs
-  -- printPRs Colour prs
+  -- printTitlesForSelection prs
+  printPRs Colour prs
 
 getAuth :: IO (Maybe Auth.Auth)
 getAuth = do
@@ -60,25 +63,25 @@ getNameAndRepo =
 usage :: String
 usage = "Usage: appoint USERNAME|OWNERNAME REPO"
 
-printTitlesForSelection :: V.Vector GitHub.SimplePullRequest -> IO ()
+printTitlesForSelection :: V.Vector Output -> IO ()
 printTitlesForSelection prs = T.putStrLn $ T.intercalate "\n" (selectUnassigned (V.toList prs))
   where
-    selectUnassigned :: [GitHub.SimplePullRequest] -> [T.Text]
+    selectUnassigned :: [Output] -> [T.Text]
     selectUnassigned prs' = [uncurry imapfn (ix, pr) | pr <- prs', hasAssignees pr | ix <- (map succ [0..])]
-    hasAssignees :: GitHub.SimplePullRequest -> Bool
-    hasAssignees pr = V.null $ GitHub.simplePullRequestAssignees pr
-    imapfn :: Integer -> GitHub.SimplePullRequest -> T.Text
-    imapfn ix pr = redic ix <> " -> " <> GitHub.simplePullRequestTitle pr
+    hasAssignees :: Output -> Bool
+    hasAssignees pr = oAssigneeCount pr == 0
+    imapfn :: Integer -> Output -> T.Text
+    imapfn ix pr = redic ix <> " -> " <> oTitle pr
 
     redic :: Integer -> T.Text
     redic i = T.pack(show i)
 
-printPRs :: OutputKind -> V.Vector GitHub.SimplePullRequest -> IO ()
+printPRs :: OutputKind -> V.Vector Output -> IO ()
 printPRs Colour prs = do
-  let colourisedPrs = map (colourOutput . toOutput) (V.toList prs)
+  let colourisedPrs = map colourOutput (V.toList prs)
   mapM_ printChunks colourisedPrs
 printPRs Plain prs = do
-  let plainPrs = map (plainOutput . toOutput) (V.toList prs)
+  let plainPrs = map plainOutput (V.toList prs)
   mapM_ T.putStrLn plainPrs
 
 plainOutput :: Output -> T.Text
@@ -109,12 +112,13 @@ doRequest
   :: Handler a b
   -> (a, b)
   -> Maybe Auth.Auth
-  -> IO (V.Vector GitHub.SimplePullRequest)
+  -> IO (V.Vector Output)
 doRequest handler p auth = do
   possiblePullRequests <- uncurry handler p
   case possiblePullRequests of
     Left err -> putStrLn (mkErrorMsg auth err) >> exitFailure
-    Right pullRequests -> return pullRequests
+    Right pullRequests -> return $ f pullRequests
+    where f = V.map toOutput
 
 mkErrorMsg :: Show a => Maybe Auth.Auth -> a -> String
 mkErrorMsg Nothing _ =
@@ -126,11 +130,11 @@ toOutput :: GitHub.SimplePullRequest -> Output
 toOutput pullRequest =
   Output
   { oTitle = GitHub.simplePullRequestTitle pullRequest
-  , oBody =
-    maybe "" (wrapParagraph 72) (GitHub.simplePullRequestBody pullRequest)
-  , oAuthor =
-    "Author: " <> displayUser (GitHub.simplePullRequestUser pullRequest)
+  , oBody = maybe "" (wrapParagraph 72) (GitHub.simplePullRequestBody pullRequest)
+  , oAuthor = "Author: " <> displayUser (GitHub.simplePullRequestUser pullRequest)
   , oAssignees = assignedTo (GitHub.simplePullRequestAssignees pullRequest)
+  , oAssigneeCount = V.length (GitHub.simplePullRequestAssignees pullRequest)
+  , oCreated = GitHub.simplePullRequestCreatedAt pullRequest
   , oURL = GitHub.getUrl $ GitHub.simplePullRequestHtmlUrl pullRequest
   }
 
@@ -153,4 +157,4 @@ pullRequestsFor
   -> GitHub.Name GitHub.Repo
   -> IO (Either GitHub.Error (V.Vector GitHub.SimplePullRequest))
 pullRequestsFor auth user repo =
-  executeRequest auth $ GitHub.pullRequestsForR user repo mempty GitHub.FetchAll
+  executeRequest auth $ GitHub.pullRequestsForR user repo mempty (GitHub.FetchAtLeast 20)
