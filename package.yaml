@@ -26,6 +26,9 @@ library:
   - transformers
   - time
   - rainbow
+  - mtl
+  - lens
+  - aeson
 executables:
   appoint:
     main: Main.hs

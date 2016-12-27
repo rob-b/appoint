@@ -12,6 +12,8 @@ import qualified GitHub.Auth as Auth
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString as BS
 import Appoint.Wrap
+import Control.Lens ((^.))
+import Control.Monad.Reader
 import Data.List (foldl')
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
@@ -21,6 +23,13 @@ import GitHub.Request
 import Rainbow
 import System.Environment (lookupEnv, getArgs)
 import System.Exit (exitFailure)
+
+import Appoint.Users (collaboratorsOn, mkCollaborators)
+import Appoint.Types.Users (Collaborators(..))
+import Appoint.Types.Config
+import Appoint.Local
+       (saveCollaboratorsToFile, collaboratorsFromFile, SomethingBad(..),
+        JsonLoadError(..))
 
 data OutputKind = Plain | Colour
 
@@ -43,9 +52,30 @@ main = do
     case pair of
       Nothing -> putStrLn usage >> exitFailure
       Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
+  let config = uncurry (mkConfig auth) pair'
+  collabs <- runReaderT getCollaborators config
+  case collabs of
+    Left e -> error (show e)
+    Right users -> print users
   prs <- doRequest handler pair' auth
-  -- printTitlesForSelection prs
-  printPRs Colour prs
+  printTitlesForSelection prs
+  -- printPRs Colour prs
+
+getCollaborators :: ReaderT Appoint.Types.Config.Config IO (Either SomethingBad [Collaborators])
+getCollaborators = do
+  config <- ask
+  collabs <- lift collaboratorsFromFile
+  case collabs of
+    Right collaborators -> return (Right collaborators)
+    Left (JsonParseError e) -> return . Left $ SomethingJson (JsonParseError e)
+    Left (JsonIOError _) -> do
+      x <- collaboratorsOn
+      case x of
+        Left e' -> return . Left $ SomethingRemote (show e')
+        Right users -> do
+          let users' = mkCollaborators (config ^. cName) (config ^. cRepo) (V.toList users)
+          _ <- lift $ saveCollaboratorsToFile users'
+          return $ Right users'
 
 getAuth :: IO (Maybe Auth.Auth)
 getAuth = do
@@ -69,7 +99,7 @@ printTitlesForSelection prs = T.putStrLn $ T.intercalate "\n" (selectUnassigned 
     selectUnassigned :: [Output] -> [T.Text]
     selectUnassigned prs' = [uncurry imapfn (ix, pr) | pr <- prs', hasAssignees pr | ix <- (map succ [0..])]
     hasAssignees :: Output -> Bool
-    hasAssignees pr = oAssigneeCount pr == 0
+    hasAssignees pr = oAssigneeCount pr /= 10
     imapfn :: Integer -> Output -> T.Text
     imapfn ix pr = redic ix <> " -> " <> oTitle pr
 

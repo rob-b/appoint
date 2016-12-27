@@ -34,6 +34,10 @@ library
       Appoint.Lib
       Appoint.Wrap
   other-modules:
+      Appoint.Local
+      Appoint.Types.Config
+      Appoint.Types.Users
+      Appoint.Users
       Paths_appoint
   build-depends:
       base >=4.7 && <5
@@ -44,6 +48,9 @@ library
     , transformers
     , time
     , rainbow
+    , mtl
+    , lens
+    , aeson
 
 executable appoint
   default-language: Haskell2010
