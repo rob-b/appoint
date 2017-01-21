@@ -12,8 +12,8 @@ import qualified GitHub.Auth as Auth
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString as BS
 import Appoint.Wrap
-import Control.Lens ((^.))
 import Control.Monad.Reader
+import Control.Monad.Trans.Except
 import Data.List (foldl')
 import Data.Maybe (catMaybes)
 import Data.Monoid ((<>))
@@ -29,7 +29,7 @@ import Appoint.Types.Users (Collaborators(..))
 import Appoint.Types.Config
 import Appoint.Local
        (saveCollaboratorsToFile, collaboratorsFromFile, SomethingBad(..),
-        JsonLoadError(..))
+        JsonLoadError(..), describeJsonError)
 
 data OutputKind = Plain | Colour
 
@@ -53,29 +53,35 @@ main = do
       Nothing -> putStrLn usage >> exitFailure
       Just (a,b) -> return (GitHub.mkOwnerName a, GitHub.mkRepoName b)
   let config = uncurry (mkConfig auth) pair'
-  collabs <- runReaderT getCollaborators config
-  case collabs of
-    Left e -> error (show e)
-    Right users -> print users
   prs <- doRequest handler pair' auth
   printTitlesForSelection prs
+  showCollaborators config
   -- printPRs Colour prs
+  --
+  --
+showCollaborators config = do
+  collabs <- runExceptT $ runReaderT getCollaborators config
+  case meh collabs of
+    Halt msg -> T.putStrLn msg >> exitFailure
+    Retry -> error "We need to creat the collab list"
+    Proceed collaborators -> print collaborators
 
-getCollaborators :: ReaderT Appoint.Types.Config.Config IO (Either SomethingBad [Collaborators])
-getCollaborators = do
-  config <- ask
-  collabs <- lift collaboratorsFromFile
-  case collabs of
-    Right collaborators -> return (Right collaborators)
-    Left (JsonParseError e) -> return . Left $ SomethingJson (JsonParseError e)
-    Left (JsonIOError _) -> do
-      x <- collaboratorsOn
-      case x of
-        Left e' -> return . Left $ SomethingRemote (show e')
-        Right users -> do
-          let users' = mkCollaborators (config ^. cName) (config ^. cRepo) (V.toList users)
-          _ <- lift $ saveCollaboratorsToFile users'
-          return $ Right users'
+data Action = Proceed [Collaborators] | Halt T.Text | Retry
+
+meh :: Either SomethingBad [Collaborators] -> Action
+meh (Left (SomethingRemote _)) = error "We have not encountered this code path yet"
+meh (Left (SomethingMissing namerepo)) = error(show namerepo)
+meh (Left (SomethingJson msg)) = Halt $ describeJsonError msg
+meh (Right collaborators) = Proceed collaborators
+
+getCollaborators :: ReaderT Appoint.Types.Config.Config (ExceptT SomethingBad IO) [Collaborators]
+getCollaborators =
+  lift $ do
+    collabs <- lift collaboratorsFromFile
+    case collabs of
+      Right collaborators -> return collaborators
+      Left (JsonParseError e) -> throwE $ SomethingJson (JsonParseError e)
+      Left (JsonIOError ioerror) -> throwE $ SomethingJson (JsonIOError ioerror)
 
 getAuth :: IO (Maybe Auth.Auth)
 getAuth = do
@@ -146,15 +152,15 @@ doRequest
 doRequest handler p auth = do
   possiblePullRequests <- uncurry handler p
   case possiblePullRequests of
-    Left err -> putStrLn (mkErrorMsg auth err) >> exitFailure
+    Left err -> putStrLn (mkRequestErrorMsg auth err) >> exitFailure
     Right pullRequests -> return $ f pullRequests
     where f = V.map toOutput
 
-mkErrorMsg :: Show a => Maybe Auth.Auth -> a -> String
-mkErrorMsg Nothing _ =
+mkRequestErrorMsg :: Show a => Maybe Auth.Auth -> a -> String
+mkRequestErrorMsg Nothing _ =
   "Error while making unauthenticated request. " <>
   "Perhaps this repo is private in which case you must set the GITHUB_TOKEN env var."
-mkErrorMsg (Just _) err = show err
+mkRequestErrorMsg (Just _) err = show err
 
 toOutput :: GitHub.SimplePullRequest -> Output
 toOutput pullRequest =

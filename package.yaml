@@ -29,6 +29,7 @@ library:
   - mtl
   - lens
   - aeson
+  - containers
 executables:
   appoint:
     main: Main.hs
