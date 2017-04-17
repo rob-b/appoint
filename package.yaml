@@ -17,6 +17,7 @@ library:
   exposed-modules:
   - Appoint.Lib
   - Appoint.Wrap
+  - Appoint.Cli
   - Appoint.Types.Issues
   dependencies:
   - base >=4.7 && <5
@@ -35,6 +36,7 @@ library:
   - persistent
   - persistent-sqlite
   - persistent-template
+  - optparse-applicative
 executables:
   appoint:
     main: Main.hs

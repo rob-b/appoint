@@ -33,9 +33,13 @@ library
   exposed-modules:
       Appoint.Lib
       Appoint.Wrap
+      Appoint.Cli
       Appoint.Types.Issues
   other-modules:
+      Appoint.Assign
       Appoint.Entities
+      Appoint.Import
+      Appoint.IssueStatus
       Appoint.Local
       Appoint.Models
       Appoint.Types.Config
@@ -59,6 +63,7 @@ library
     , persistent
     , persistent-sqlite
     , persistent-template
+    , optparse-applicative
 
 executable appoint
   default-language: Haskell2010

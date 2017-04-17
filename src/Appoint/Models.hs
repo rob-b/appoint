@@ -6,17 +6,17 @@
 
 
 module Appoint.Models where
+import           Appoint.Entities        (migrateAll)
+import qualified Appoint.Entities        as Entities
+import           Appoint.Types.Issues    hiding (issueLabels)
+import           Control.Monad           (forM, forM_)
+import qualified Data.Vector             as V
 import           Database.Esqueleto
--- import           Database.Persist hiding ((=.))
-import qualified Database.Persist as P
+import qualified Database.Persist        as P
 import           Database.Persist.Sql    (toSqlKey)
 import           Database.Persist.Sqlite (runSqlite)
-import           Appoint.Entities             (migrateAll)
-import qualified Appoint.Entities             as Entities
-import Appoint.Types.Issues
-import GitHub.Data.Definitions (IssueLabel)
-import GitHub.Data.Issues (Issue)
-import Control.Monad (forM)
+import           GitHub.Data.Definitions (IssueLabel)
+import           GitHub.Data.Issues      (Issue, issueLabels)
 
 
 updateTo :: PersistField typ => EntityField v typ -> typ -> P.Update v
@@ -32,12 +32,14 @@ labelToLabel label =
   Entities.Label (labelName' label) (labelColor' label) (labelUrl' label)
 
 
+issueToIssue :: Issue -> Entities.Issue
 issueToIssue issue =
   Entities.Issue
   { Entities.issueName = issueTitle issue
   , Entities.issueNumber = issueNumber issue
   , Entities.issueUpdatedAt = issueUpdatedAt issue
   , Entities.issueBody = issueBody issue
+  , Entities.issueState = issueState issue
   }
 
 
@@ -45,7 +47,9 @@ persistLabel :: IssueLabel -> IO (Key Entities.Label)
 persistLabel label =
   runSqlite "pr.sqlite" $
   do runMigration migrateAll
-     insert (labelToLabel label)
+     let label' = labelToLabel label
+     entity <- upsert label' [Entities.LabelName `updateTo` labelName' label]
+     return $ entityKey entity
 
 
 persistIssue :: Issue -> IO (Key Entities.Issue)
@@ -73,3 +77,16 @@ persistIssueLabel issueId' labelIds =
                , Entities.issueLabelLabelId = id'
                }
          insert issueLabel
+
+
+saveLabelsFromIssue :: Issue -> IO (V.Vector (Key Entities.Label))
+saveLabelsFromIssue issue = forM (issueLabels issue) persistLabel
+
+
+-------------------------------------------------------------------------------
+-- | Given a collection of issues, save them and any labels they have to the db
+saveIssues :: Foldable t => t Issue -> IO ()
+saveIssues issues = forM_ issues $ \issue -> do
+  labelIds <- saveLabelsFromIssue issue
+  issueId' <- persistIssue issue
+  persistIssueLabel issueId' labelIds

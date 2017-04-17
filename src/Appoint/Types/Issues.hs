@@ -15,7 +15,9 @@ import qualified GitHub.Data.Definitions as GitHub
 import qualified GitHub.Data.URL as GitHub
 import qualified GitHub.Data.Name as GitHub
 import qualified GitHub.Data.Id as GitHub
+import GitHub.Data.Options (IssueState(..))
 import Data.Vector (Vector)
+import Appoint.Import (IssueStatus(Open), IssueStatus(Closed))
 
 
 instance ToJSON GitHub.Issue where
@@ -64,3 +66,10 @@ issueBody issue = fromMaybe "" (GitHub.issueBody issue)
 
 issueId :: GitHub.Issue -> Int
 issueId issue = GitHub.untagId $ GitHub.issueId issue
+
+
+issueState :: GitHub.Issue -> IssueStatus
+issueState issue =
+  case GitHub.issueState issue of
+    StateOpen -> Open
+    StateClosed -> Closed

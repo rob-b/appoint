@@ -13,6 +13,8 @@ module Appoint.Entities where
 import Data.Text               (Text)
 import Database.Esqueleto
 import Database.Persist.TH
+import Appoint.IssueStatus
+
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 Label sql=labels
@@ -28,6 +30,7 @@ Issue sql=issues
   UniqueNumber number
   updatedAt Text sql=updated_at
   body Text
+  state IssueStatus
   deriving Show
 
 IssueLabel sql=issue_labels
