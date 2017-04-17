@@ -1,4 +1,4 @@
--- This file has been generated from package.yaml by hpack version 0.15.0.
+-- This file has been generated from package.yaml by hpack version 0.17.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -33,8 +33,11 @@ library
   exposed-modules:
       Appoint.Lib
       Appoint.Wrap
+      Appoint.Types.Issues
   other-modules:
+      Appoint.Entities
       Appoint.Local
+      Appoint.Models
       Appoint.Types.Config
       Appoint.Types.Users
       Appoint.Users
@@ -52,6 +55,10 @@ library
     , lens
     , aeson
     , containers
+    , esqueleto
+    , persistent
+    , persistent-sqlite
+    , persistent-template
 
 executable appoint
   default-language: Haskell2010

@@ -4,3 +4,4 @@
 /.stack-work/
 .hindent.yaml
 .collaborators.json
+*sqlite*

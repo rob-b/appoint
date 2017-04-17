@@ -17,6 +17,7 @@ library:
   exposed-modules:
   - Appoint.Lib
   - Appoint.Wrap
+  - Appoint.Types.Issues
   dependencies:
   - base >=4.7 && <5
   - text
@@ -30,6 +31,10 @@ library:
   - lens
   - aeson
   - containers
+  - esqueleto
+  - persistent
+  - persistent-sqlite
+  - persistent-template
 executables:
   appoint:
     main: Main.hs
