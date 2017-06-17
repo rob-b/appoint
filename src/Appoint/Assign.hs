@@ -53,9 +53,12 @@ mkOwnershipParams a b = (GitHub.mkOwnerName a, GitHub.mkRepoName b)
 
 
 -------------------------------------------------------------------------------
-listPrs :: GitHub.Name GitHub.Owner -> GitHub.Name GitHub.Repo -> Maybe Auth.Auth -> IO ()
-listPrs owner repo auth = do
+listPrs :: Config -> IO ()
+listPrs config = do
   let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
+      auth = config ^. cAuth
+      owner = config ^. cName
+      repo = config ^. cRepo
   prs <- doRequest handler owner repo auth
   -- interactiveAppoint prs config
   printPRs Colour prs

@@ -1,28 +1,28 @@
 module Appoint.Cli (main) where
 
-import           Appoint.Assign            (listPrs, mkOwnershipParams)
-import           Appoint.Lib               (refresh)
-import qualified Data.ByteString.Char8     as BS8
-import           Data.Monoid               ((<>))
-import qualified Data.Text                 as T
-import qualified GitHub.Auth               as Auth
+import           Appoint.Assign (listPrs)
+import           Appoint.Lib (refresh)
+import           Appoint.Types.Config (mkConfig)
+import qualified Data.ByteString.Char8 as BS8
+import           Data.Monoid ((<>))
+import qualified Data.Text as T
+import qualified GitHub.Auth as Auth
 import           Options.Applicative
 import           Options.Applicative.Types (readerAsk)
-import           System.Environment        (lookupEnv)
-
+import           System.Environment (lookupEnv)
 
 data RefreshCommand =
   RefreshCommand
    deriving (Show)
 
-data AssignCommand = AssignCommand
-  { assignOwner :: T.Text
-  , assignRepo :: T.Text
-  } deriving (Show)
+data RepoIdentity =
+  RepoIdentity T.Text
+               T.Text
+  deriving (Show)
 
 data Command
-  = Refresh
-  | Assign AssignCommand
+  = Refresh RepoIdentity
+  | Assign RepoIdentity
    deriving (Show)
 
 
@@ -47,17 +47,18 @@ commandParser =
 
 -------------------------------------------------------------------------------
 refreshParser :: Parser Command
-refreshParser = pure Refresh
+refreshParser = Refresh <$> repoParser
 
 
 -------------------------------------------------------------------------------
 assignParser :: Parser Command
-assignParser = Assign <$> assignCommandParser
+assignParser = Assign <$> repoParser
 
 
-assignCommandParser :: Parser AssignCommand
-assignCommandParser =
-  AssignCommand <$> argument readerText (metavar "OWNER") <*>
+-------------------------------------------------------------------------------
+repoParser :: Parser RepoIdentity
+repoParser =
+  RepoIdentity <$> argument readerText (metavar "OWNER") <*>
   argument readerText (metavar "REPO")
 
 
@@ -79,7 +80,11 @@ main :: IO ()
 main = do
   args <- execParser argsWithInfo
   case args of
-    Refresh -> getAuth >>= refresh
-    Assign (AssignCommand owner' repo') -> do
+    Refresh (RepoIdentity owner' repo') -> do
       auth <- getAuth
-      uncurry listPrs (mkOwnershipParams owner' repo') auth
+      let config = mkConfig auth owner' repo'
+      refresh config
+    Assign (RepoIdentity owner' repo') -> do
+      auth <- getAuth
+      let config = mkConfig auth owner' repo'
+      listPrs config
