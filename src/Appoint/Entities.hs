@@ -37,4 +37,10 @@ IssueLabel sql=issue_labels
   labelId LabelId sql=label_id
   issueId IssueId sql=issue_id
   IssueLabelIds labelId issueId
+
+Repo sql=repos
+  name Text
+  owner Text
+  externalId Int sql=external_id
+  deriving Show
 |]
