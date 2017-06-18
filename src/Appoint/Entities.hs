@@ -14,6 +14,8 @@ import Data.Text               (Text)
 import Database.Esqueleto
 import Database.Persist.TH
 import Appoint.IssueStatus
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Database.Persist.Sql (ConnectionPool)
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
@@ -44,3 +46,11 @@ Repo sql=repos
   externalId Int sql=external_id
   deriving Show
 |]
+
+
+doMigrations :: (MonadIO m) => SqlPersistT m ()
+doMigrations = runMigration migrateAll
+
+
+runDb :: (MonadIO m) => ConnectionPool -> SqlPersistT IO b -> m b
+runDb pool query = liftIO $ runSqlPool query pool

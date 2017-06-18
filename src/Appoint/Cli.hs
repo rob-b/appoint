@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings          #-}
 module Appoint.Cli (main) where
 
 import           Appoint.Assign (listPrs)
+import           Appoint.Entities (doMigrations)
 import           Appoint.Lib (refresh)
 import           Appoint.Types.Config (mkConfig)
 import           Control.Monad.Log (runLoggingT, discardSeverity)
@@ -9,6 +11,7 @@ import qualified Data.ByteString.Char8 as BS8
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import           Database.Persist.Sqlite (runSqlite, withSqliteConn)
 import qualified GitHub.Auth as Auth
 import           Options.Applicative
 import           Options.Applicative.Types (readerAsk)
@@ -85,6 +88,8 @@ main = do
   auth <- getAuth
   let partConfig = mkConfig auth
       cmd = selectCmd args partConfig
+
+  runSqlite "pr.sqlite" doMigrations
   -- discardLogging cmd
   runLoggingT cmd (TIO.putStrLn . discardSeverity)
 

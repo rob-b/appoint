@@ -6,7 +6,8 @@
 
 
 module Appoint.Models where
-import           Appoint.Entities        (migrateAll)
+
+import           Appoint.Entities        (migrateAll, runDb)
 import qualified Appoint.Entities        as Entities
 import           Appoint.Types.Issues    hiding (issueLabels)
 import           Control.Monad           (forM, forM_)
@@ -14,10 +15,13 @@ import qualified Data.Vector             as V
 import           Database.Esqueleto
 import qualified Database.Persist        as P
 import           Database.Persist.Sql    (toSqlKey)
-import           Database.Persist.Sqlite (runSqlite)
+import           Database.Persist.Sqlite (runSqlite, createSqlitePool)
 import           GitHub.Data.Definitions (IssueLabel)
 import           GitHub.Data.Issues      (Issue, issueLabels)
 import Data.Foldable (toList)
+import Control.Monad.Logger (MonadLogger)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Trans.Control (MonadBaseControl)
 
 
 updateTo :: PersistField typ => EntityField v typ -> typ -> P.Update v
@@ -86,29 +90,32 @@ saveLabelsFromIssue issue = forM (issueLabels issue) persistLabel
 
 -------------------------------------------------------------------------------
 -- | Given a collection of issues, save them and any labels they have to the db
-saveIssues :: (Functor t, Foldable t) => t Issue -> IO ()
+saveIssues
+  :: (Functor t, Foldable t, MonadIO m, MonadBaseControl IO m, MonadLogger m)
+  => t Issue -> m ()
 saveIssues issues = do
   existing <- countExisting issues
-  print existing
+  liftIO $ print existing
   forM_ issues $ \issue -> do
-    labelIds <- saveLabelsFromIssue issue
-    issueId' <- persistIssue issue
-    persistIssueLabel issueId' labelIds
+    labelIds <- liftIO $ saveLabelsFromIssue issue
+    issueId' <- liftIO $ persistIssue issue
+    liftIO $ persistIssueLabel issueId' labelIds
 
 
-countExisting :: (Foldable t, Functor t) => t Issue -> IO Int
+countExisting
+  :: (MonadBaseControl IO m, MonadIO m, MonadLogger m, Foldable t, Functor t)
+  => t Issue -> m Int
 countExisting issues = do
-  [existing] <- countExisting' issues
+  pool <- createSqlitePool "pr.sqlite" 1
+  [existing] <- runDb pool (countExisting' issues)
   pure $ unValue existing
 
 
 countExisting'
-  :: (Functor t, Foldable t)
-  => t Issue -> IO [Value Int]
+  :: (MonadIO m, Foldable t, Num a, Functor t, PersistField a)
+  => t Issue -> SqlPersistT m [Value a]
 countExisting' issues =
   let issueIds = toList $ fmap issueNumber issues
-  in runSqlite "pr.sqlite" $ do
-       runMigration migrateAll
-       select . from $ \issue -> do
-         where_ $ issue ^. Entities.IssueNumber `notIn` valList issueIds
-         return $ count (issue ^. Entities.IssueId)
+  in select . from $ \issue -> do
+       where_ $ issue ^. Entities.IssueNumber `notIn` valList issueIds
+       return $ count (issue ^. Entities.IssueId)

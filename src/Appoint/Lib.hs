@@ -26,7 +26,7 @@ refresh config = do
     Left yikes -> do
       logMessage $ info (T.pack ("Failed to refresh: " <> show yikes))
       liftIO exitFailure
-    Right issues -> liftIO $ saveIssues issues
+    Right issues -> liftIO undefined -- saveIssues issues
 
 
 info :: a -> WithSeverity a
