@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ParallelListComp #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Appoint.Assign where
 
@@ -30,6 +31,8 @@ import Appoint.Types.Config
 import Appoint.Local
        (SomethingBad(..),
         JsonLoadError(..), describeJsonError, collaboratorsFromFile)
+import Control.Monad.Log (MonadLog, WithSeverity)
+import Control.Monad.IO.Class (MonadIO)
 
 
 data Action = Proceed [Collaborators] | Halt T.Text | Retry
@@ -53,16 +56,17 @@ mkOwnershipParams a b = (GitHub.mkOwnerName a, GitHub.mkRepoName b)
 
 
 -------------------------------------------------------------------------------
-listPrs :: Config -> IO ()
+listPrs
+  :: (MonadIO m, MonadLog (WithSeverity T.Text) m)
+  => Config -> m ()
 listPrs config = do
   let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
       auth = config ^. cAuth
       owner = config ^. cName
       repo = config ^. cRepo
-  prs <- doRequest handler owner repo auth
+  prs <- liftIO $ doRequest handler owner repo auth
   -- interactiveAppoint prs config
-  printPRs Colour prs
-
+  liftIO $ printPRs Colour prs
 
 -------------------------------------------------------------------------------
 type Handler a b = (a -> b -> IO (Either Error (V.Vector GitHub.SimplePullRequest)))
@@ -204,10 +208,10 @@ printTitlesForSelection xs = printXForSelection fmt (V.toList xs)
 -------------------------------------------------------------------------------
 printPRs :: OutputKind -> V.Vector Output -> IO ()
 printPRs Colour prs = do
-  let colourisedPrs = map colourOutput (V.toList prs)
+  let colourisedPrs = fmap colourOutput (V.toList prs)
   mapM_ printChunks colourisedPrs
 printPRs Plain prs = do
-  let plainPrs = map plainOutput (V.toList prs)
+  let plainPrs = fmap plainOutput (V.toList prs)
   mapM_ T.putStrLn plainPrs
 
 

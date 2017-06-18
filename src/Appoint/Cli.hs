@@ -1,11 +1,14 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Appoint.Cli (main) where
 
 import           Appoint.Assign (listPrs)
 import           Appoint.Lib (refresh)
 import           Appoint.Types.Config (mkConfig)
+import           Control.Monad.Log (runLoggingT, discardSeverity)
 import qualified Data.ByteString.Char8 as BS8
 import           Data.Monoid ((<>))
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import qualified GitHub.Auth as Auth
 import           Options.Applicative
 import           Options.Applicative.Types (readerAsk)
@@ -79,12 +82,13 @@ readerText = T.pack <$> readerAsk
 main :: IO ()
 main = do
   args <- execParser argsWithInfo
-  case args of
-    Refresh (RepoIdentity owner' repo') -> do
-      auth <- getAuth
-      let config = mkConfig auth owner' repo'
-      refresh config
-    Assign (RepoIdentity owner' repo') -> do
-      auth <- getAuth
-      let config = mkConfig auth owner' repo'
-      listPrs config
+  auth <- getAuth
+  let partConfig = mkConfig auth
+      cmd = selectCmd args partConfig
+  -- discardLogging cmd
+  runLoggingT cmd (TIO.putStrLn . discardSeverity)
+
+  where
+    selectCmd args' partConfig = case args' of
+      Refresh (RepoIdentity owner' repo') -> refresh (partConfig owner' repo')
+      Assign (RepoIdentity owner' repo') -> listPrs (partConfig owner' repo')

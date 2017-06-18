@@ -37,6 +37,7 @@ library:
   - persistent-sqlite
   - persistent-template
   - optparse-applicative
+  - logging-effect
 executables:
   appoint:
     main: Main.hs

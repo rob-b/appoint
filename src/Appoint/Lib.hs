@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Appoint.Lib where
 
 import           Appoint.Models          (saveIssues)
@@ -10,24 +11,36 @@ import qualified GitHub.Data             as GitHub
 import qualified GitHub.Endpoints.Search as GitHub
 import Control.Monad.Except (ExceptT, throwError, liftIO, runExceptT)
 import System.Exit (exitFailure)
+import Control.Monad.Log
+import Control.Monad.IO.Class (MonadIO)
+import Data.Text (Text)
+import qualified Data.Text as T
 
 
 -------------------------------------------------------------------------------
 -- | Search for PRs, save results to db
-refresh :: Config -> IO ()
+refresh :: (MonadIO m, MonadLog (WithSeverity Text) m) => Config -> m ()
 refresh config = do
   result <- runExceptT (searchPrs config)
   case result of
-    Left yikes -> putStrLn ("Failed to refresh: " <> show yikes) >> exitFailure
-    Right issues -> saveIssues issues
+    Left yikes -> do
+      logMessage $ info (T.pack ("Failed to refresh: " <> show yikes))
+      liftIO exitFailure
+    Right issues -> liftIO $ saveIssues issues
 
 
-newtype AppointError =
-  AppointError String
+info :: a -> WithSeverity a
+info = WithSeverity Informational
+
+
+newtype SearchError =
+  SearchError String
   deriving (Show)
 
 -------------------------------------------------------------------------------
-searchPrs :: Config -> ExceptT AppointError IO (V.Vector GitHub.Issue)
+searchPrs
+  :: (MonadIO m, MonadLog (WithSeverity Text) m)
+  => Config -> ExceptT SearchError m (V.Vector GitHub.Issue)
 searchPrs config = do
   let owner' = GitHub.untagName $ config ^. cName
       repo' = GitHub.untagName $ config ^. cRepo
@@ -35,10 +48,10 @@ searchPrs config = do
   things <-
     liftIO $ GitHub.searchIssues' auth ("is:pr is:open repo:" <> owner' <> "/" <> repo')
   case things of
-    Left err' -> throwError $ AppointError (show err')
+    Left err' -> throwError $ SearchError (show err')
     Right results -> do
       let results' = GitHub.searchResultResults results
       if config ^. cVerbose
-        then liftIO . putStrLn $ "Found " <> show (V.length results') <> " PR(s)"
+        then logMessage $ info (T.pack $ "Found " <> show (V.length results') <> " PR(s)")
         else pure ()
       pure results'
