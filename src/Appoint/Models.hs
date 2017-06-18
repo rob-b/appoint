@@ -65,7 +65,7 @@ persistIssueLabel
   :: (Traversable t)
   => Key Entities.Issue
   -> t (Key Entities.Label)
-  -> IO (t (Key Entities.IssueLabel))
+  -> IO (t (Maybe (Key Entities.IssueLabel)))
 persistIssueLabel issueId' labelIds =
   runSqlite "pr.sqlite" $
   do runMigration migrateAll
@@ -76,7 +76,7 @@ persistIssueLabel issueId' labelIds =
                { Entities.issueLabelIssueId = issueId'
                , Entities.issueLabelLabelId = id'
                }
-         insert issueLabel
+         insertUnique issueLabel
 
 
 saveLabelsFromIssue :: Issue -> IO (V.Vector (Key Entities.Label))
