@@ -37,6 +37,7 @@ newtype SearchError =
   SearchError String
   deriving (Show)
 
+
 -------------------------------------------------------------------------------
 searchPrs
   :: (MonadIO m, MonadLog (WithSeverity Text) m)

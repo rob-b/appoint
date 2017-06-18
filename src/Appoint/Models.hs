@@ -17,6 +17,7 @@ import           Database.Persist.Sql    (toSqlKey)
 import           Database.Persist.Sqlite (runSqlite)
 import           GitHub.Data.Definitions (IssueLabel)
 import           GitHub.Data.Issues      (Issue, issueLabels)
+import Data.Foldable (toList)
 
 
 updateTo :: PersistField typ => EntityField v typ -> typ -> P.Update v
@@ -85,8 +86,29 @@ saveLabelsFromIssue issue = forM (issueLabels issue) persistLabel
 
 -------------------------------------------------------------------------------
 -- | Given a collection of issues, save them and any labels they have to the db
-saveIssues :: Foldable t => t Issue -> IO ()
-saveIssues issues = forM_ issues $ \issue -> do
-  labelIds <- saveLabelsFromIssue issue
-  issueId' <- persistIssue issue
-  persistIssueLabel issueId' labelIds
+saveIssues :: (Functor t, Foldable t) => t Issue -> IO ()
+saveIssues issues = do
+  existing <- countExisting issues
+  print existing
+  forM_ issues $ \issue -> do
+    labelIds <- saveLabelsFromIssue issue
+    issueId' <- persistIssue issue
+    persistIssueLabel issueId' labelIds
+
+
+countExisting :: (Foldable t, Functor t) => t Issue -> IO Int
+countExisting issues = do
+  [existing] <- countExisting' issues
+  pure $ unValue existing
+
+
+countExisting'
+  :: (Functor t, Foldable t)
+  => t Issue -> IO [Value Int]
+countExisting' issues =
+  let issueIds = toList $ fmap issueNumber issues
+  in runSqlite "pr.sqlite" $ do
+       runMigration migrateAll
+       select . from $ \issue -> do
+         where_ $ issue ^. Entities.IssueNumber `notIn` valList issueIds
+         return $ count (issue ^. Entities.IssueId)
