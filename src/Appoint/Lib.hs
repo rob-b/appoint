@@ -51,7 +51,5 @@ searchPrs config = do
     Left err' -> throwError $ SearchError (show err')
     Right results -> do
       let results' = GitHub.searchResultResults results
-      if config ^. cVerbose
-        then logMessage $ info (T.pack $ "Found " <> show (V.length results') <> " PR(s)")
-        else pure ()
+      logMessage $ info (T.pack $ "Found " <> show (V.length results') <> " PR(s)")
       pure results'
