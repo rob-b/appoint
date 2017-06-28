@@ -15,7 +15,8 @@ import Database.Esqueleto
 import Database.Persist.TH
 import Appoint.IssueStatus
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Database.Persist.Sql (ConnectionPool)
+import Control.Monad.Reader (asks, MonadReader)
+import Appoint.Types.Config (AppState, appPool)
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
@@ -52,5 +53,7 @@ doMigrations :: (MonadIO m) => SqlPersistT m ()
 doMigrations = runMigration migrateAll
 
 
-runDb :: (MonadIO m) => ConnectionPool -> SqlPersistT IO b -> m b
-runDb pool query = liftIO $ runSqlPool query pool
+runDb :: (MonadIO m, MonadReader AppState m) => SqlPersistT IO b -> m b
+runDb query = do
+  pool <- asks appPool
+  liftIO $ runSqlPool query pool

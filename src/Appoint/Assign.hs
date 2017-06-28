@@ -31,7 +31,6 @@ import Appoint.Types.Config
 import Appoint.Local
        (SomethingBad(..),
         JsonLoadError(..), describeJsonError, collaboratorsFromFile)
-import Control.Monad.Log (MonadLog, WithSeverity)
 import Control.Monad.IO.Class (MonadIO)
 
 
@@ -51,15 +50,18 @@ data Output = Output
 
 
 -------------------------------------------------------------------------------
-mkOwnershipParams :: T.Text -> T.Text -> (GitHub.Name GitHub.Owner, GitHub.Name GitHub.Repo)
+mkOwnershipParams :: T.Text
+                  -> T.Text
+                  -> (GitHub.Name GitHub.Owner, GitHub.Name GitHub.Repo)
 mkOwnershipParams a b = (GitHub.mkOwnerName a, GitHub.mkRepoName b)
 
 
 -------------------------------------------------------------------------------
 listPrs
-  :: (MonadIO m, MonadLog (WithSeverity T.Text) m)
-  => Config -> m ()
-listPrs config = do
+  :: (MonadIO m, MonadReader AppState m)
+  => m ()
+listPrs = do
+  config <- asks appConfig
   let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
       auth = config ^. cAuth
       owner = config ^. cName

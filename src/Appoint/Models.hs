@@ -1,27 +1,26 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 
 module Appoint.Models where
 
-import           Appoint.Entities        (migrateAll, runDb)
-import qualified Appoint.Entities        as Entities
-import           Appoint.Types.Issues    hiding (issueLabels)
-import           Control.Monad           (forM, forM_)
-import qualified Data.Vector             as V
+import           Appoint.Entities            (runDb)
+import qualified Appoint.Entities            as Entities
+import           Appoint.Types.Config
+import           Appoint.Types.Issues        hiding (issueLabels)
+import           Control.Monad               (forM, forM_)
+import           Control.Monad.IO.Class      (MonadIO, liftIO)
+import           Control.Monad.Reader        (MonadReader)
+import           Data.Foldable               (toList)
+import           Data.Maybe                  (listToMaybe)
+import qualified Data.Vector                 as V
 import           Database.Esqueleto
-import qualified Database.Persist        as P
-import           Database.Persist.Sql    (toSqlKey)
-import           Database.Persist.Sqlite (runSqlite, createSqlitePool)
-import           GitHub.Data.Definitions (IssueLabel)
-import           GitHub.Data.Issues      (Issue, issueLabels)
-import Data.Foldable (toList)
-import Control.Monad.Logger (MonadLogger)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Trans.Control (MonadBaseControl)
+import qualified Database.Persist            as P
+import           Database.Persist.Sql        (toSqlKey)
+import           GitHub.Data.Definitions     (IssueLabel)
+import           GitHub.Data.Issues          (Issue, issueLabels)
 
 
 updateTo :: PersistField typ => EntityField v typ -> typ -> P.Update v
@@ -48,67 +47,70 @@ issueToIssue issue =
   }
 
 
-persistLabel :: IssueLabel -> IO (Key Entities.Label)
-persistLabel label =
-  runSqlite "pr.sqlite" $
-  do runMigration migrateAll
-     let label' = labelToLabel label
-     entity <- upsert label' [Entities.LabelName `updateTo` labelName' label]
-     return $ entityKey entity
+persistLabel
+  :: (MonadIO m, MonadReader AppState m)
+  => IssueLabel -> m (Key Entities.Label)
+persistLabel label = runDb (persistLabel' label)
 
 
-persistIssue :: Issue -> IO (Key Entities.Issue)
-persistIssue issue =
-  runSqlite "pr.sqlite" $
-  do runMigration migrateAll
-     let issue' = issueToIssue issue
-     entity <- upsert issue' [Entities.IssueUpdatedAt `updateTo` issueUpdatedAt issue]
-     return $ entityKey entity
+persistLabel'
+  :: (MonadIO m)
+  => IssueLabel -> SqlPersistT m (Key Entities.Label)
+persistLabel' label = do
+  let label' = labelToLabel label
+  entity <- upsert label' [Entities.LabelName `updateTo` labelName' label]
+  return $ entityKey entity
+
+
+persistIssue :: (MonadIO m) => Issue -> SqlPersistT m (Key Entities.Issue)
+persistIssue issue = do
+    let issue' = issueToIssue issue
+    entity <- upsert issue' [Entities.IssueUpdatedAt `updateTo` issueUpdatedAt issue]
+    return $ entityKey entity
 
 
 persistIssueLabel
-  :: (Traversable t)
+  :: (MonadIO m, Traversable t)
   => Key Entities.Issue
   -> t (Key Entities.Label)
-  -> IO (t (Maybe (Key Entities.IssueLabel)))
+  -> SqlPersistT m (t (Maybe (Key Entities.IssueLabel)))
 persistIssueLabel issueId' labelIds =
-  runSqlite "pr.sqlite" $
-  do runMigration migrateAll
-     forM labelIds $
-       \id' -> do
-         let issueLabel =
-               Entities.IssueLabel
-               { Entities.issueLabelIssueId = issueId'
-               , Entities.issueLabelLabelId = id'
-               }
-         insertUnique issueLabel
+    forM labelIds $
+      \id' -> do
+        let issueLabel =
+              Entities.IssueLabel
+              { Entities.issueLabelIssueId = issueId'
+              , Entities.issueLabelLabelId = id'
+              }
+        insertUnique issueLabel
 
 
-saveLabelsFromIssue :: Issue -> IO (V.Vector (Key Entities.Label))
+saveLabelsFromIssue
+  :: (MonadIO m, MonadReader AppState m)
+  => Issue -> m (V.Vector (Key Entities.Label))
 saveLabelsFromIssue issue = forM (issueLabels issue) persistLabel
 
 
 -------------------------------------------------------------------------------
 -- | Given a collection of issues, save them and any labels they have to the db
 saveIssues
-  :: (Functor t, Foldable t, MonadIO m, MonadBaseControl IO m, MonadLogger m)
+  :: (Functor t, Foldable t, MonadReader AppState m, MonadIO m)
   => t Issue -> m ()
 saveIssues issues = do
   existing <- countExisting issues
   liftIO $ print existing
   forM_ issues $ \issue -> do
-    labelIds <- liftIO $ saveLabelsFromIssue issue
-    issueId' <- liftIO $ persistIssue issue
-    liftIO $ persistIssueLabel issueId' labelIds
+    labelIds <- saveLabelsFromIssue issue
+    issueId' <- runDb (persistIssue issue)
+    runDb (persistIssueLabel issueId' labelIds)
 
 
 countExisting
-  :: (MonadBaseControl IO m, MonadIO m, MonadLogger m, Foldable t, Functor t)
+  :: (MonadReader AppState m, MonadIO m, Foldable t, Functor t)
   => t Issue -> m Int
 countExisting issues = do
-  pool <- createSqlitePool "pr.sqlite" 1
-  [existing] <- runDb pool (countExisting' issues)
-  pure $ unValue existing
+  existing <- listToMaybe <$> runDb (countExisting' issues)
+  pure $ maybe 0 unValue existing
 
 
 countExisting'

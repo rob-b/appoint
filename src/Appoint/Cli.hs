@@ -2,20 +2,19 @@
 {-# LANGUAGE OverloadedStrings          #-}
 module Appoint.Cli (main) where
 
-import           Appoint.Assign (listPrs)
-import           Appoint.Entities (doMigrations)
-import           Appoint.Lib (refresh)
-import           Appoint.Types.Config (mkConfig)
-import           Control.Monad.Log (runLoggingT, discardSeverity)
-import qualified Data.ByteString.Char8 as BS8
-import           Data.Monoid ((<>))
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import           Database.Persist.Sqlite (runSqlite, withSqliteConn)
-import qualified GitHub.Auth as Auth
+import Appoint.Assign (listPrs)
+import           Appoint.Entities          (doMigrations)
+import           Appoint.Lib               (refresh)
+import           Appoint.Types.Config      (mkAppState, mkPool, runAppT)
+import qualified Data.ByteString.Char8     as BS8
+import           Data.Monoid               ((<>))
+import qualified Data.Text                 as T
+import           Database.Persist.Sql      (runSqlPool)
+import qualified GitHub.Auth               as Auth
 import           Options.Applicative
 import           Options.Applicative.Types (readerAsk)
-import           System.Environment (lookupEnv)
+import           System.Environment        (lookupEnv)
+
 
 data RefreshCommand =
   RefreshCommand
@@ -25,6 +24,7 @@ data RepoIdentity =
   RepoIdentity T.Text
                T.Text
   deriving (Show)
+
 
 data Command
   = Refresh RepoIdentity
@@ -86,14 +86,12 @@ main :: IO ()
 main = do
   args <- execParser argsWithInfo
   auth <- getAuth
-  let partConfig = mkConfig auth
-      cmd = selectCmd args partConfig
-
-  runSqlite "pr.sqlite" doMigrations
-  -- discardLogging cmd
-  runLoggingT cmd (TIO.putStrLn . discardSeverity)
-
-  where
-    selectCmd args' partConfig = case args' of
-      Refresh (RepoIdentity owner' repo') -> refresh (partConfig owner' repo')
-      Assign (RepoIdentity owner' repo') -> listPrs (partConfig owner' repo')
+  pool <- mkPool
+  runSqlPool doMigrations pool
+  case args of
+    Refresh (RepoIdentity owner' repo') -> do
+      let state = mkAppState pool auth owner' repo'
+      runAppT state refresh
+    Assign (RepoIdentity owner' repo') -> do
+      let state = mkAppState pool auth owner' repo'
+      runAppT state listPrs
