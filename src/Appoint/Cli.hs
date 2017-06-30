@@ -16,20 +16,22 @@ import           Options.Applicative.Types (readerAsk)
 import           System.Environment        (lookupEnv)
 
 
-data RefreshCommand =
-  RefreshCommand
-   deriving (Show)
-
 data RepoIdentity =
   RepoIdentity T.Text
                T.Text
   deriving (Show)
 
 
-data Command
+data SubCommand
   = Refresh RepoIdentity
   | Assign RepoIdentity
    deriving (Show)
+
+
+data Command = Command
+  { cmdVerbose :: Bool
+  , subCommand :: SubCommand
+  } deriving (Show)
 
 
 -------------------------------------------------------------------------------
@@ -44,20 +46,30 @@ withInfo opts desc = info (helper <*> opts) $ progDesc desc
 
 
 -------------------------------------------------------------------------------
+verbosityParser :: Parser Bool
+verbosityParser = switch (long "verbose" <> short 'v' <> help "Print debug output")
+
+
+-------------------------------------------------------------------------------
 commandParser :: Parser Command
-commandParser =
+commandParser = Command <$> verbosityParser <*> subs
+
+
+-------------------------------------------------------------------------------
+subs :: Parser SubCommand
+subs =
   subparser $
   command "refresh" (withInfo refreshParser "refresh pull-request") <>
   command "assign" (withInfo assignParser "Assign PRs to a collaborator")
 
 
 -------------------------------------------------------------------------------
-refreshParser :: Parser Command
+refreshParser :: Parser SubCommand
 refreshParser = Refresh <$> repoParser
 
 
 -------------------------------------------------------------------------------
-assignParser :: Parser Command
+assignParser :: Parser SubCommand
 assignParser = Assign <$> repoParser
 
 
@@ -84,11 +96,11 @@ readerText = T.pack <$> readerAsk
 -------------------------------------------------------------------------------
 main :: IO ()
 main = do
-  args <- execParser argsWithInfo
+  cmd <- execParser argsWithInfo
   auth <- getAuth
-  pool <- mkPool
+  pool <- mkPool (cmdVerbose cmd)
   runSqlPool doMigrations pool
-  case args of
+  case subCommand cmd of
     Refresh (RepoIdentity owner' repo') -> do
       let state = mkAppState pool auth owner' repo'
       runAppT state refresh
