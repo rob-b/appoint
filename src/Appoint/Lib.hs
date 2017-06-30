@@ -2,13 +2,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Appoint.Lib where
 
-import           Appoint.Models          (saveIssues)
+import           Appoint.Models          (balanceIssues)
 import           Appoint.Types.Config
 import           Control.Lens
 import           Control.Monad.Except    (ExceptT, liftIO, runExceptT,
                                           throwError)
 import           Control.Monad.IO.Class  (MonadIO)
-import           Control.Monad.Logger    (MonadLogger)
 import           Control.Monad.Reader    (MonadReader, asks)
 import           Data.Monoid             ((<>))
 import qualified Data.Vector             as V
@@ -27,13 +26,8 @@ refresh = do
   result <- runExceptT (searchPrs config)
   case result of
     Left _
-      -- info (T.pack ("Failed to refresh: " <> show yikes))
      -> liftIO exitFailure
-    Right issues -> saveIssues issues
-
-
-info :: a -> a
-info = id
+    Right issues -> balanceIssues issues
 
 
 newtype SearchError =
@@ -55,5 +49,4 @@ searchPrs config = do
     Left err' -> throwError $ SearchError (show err')
     Right results -> do
       let results' = GitHub.searchResultResults results
-      -- info (T.pack $ "Found " <> show (V.length results') <> " PR(s)")
       pure results'
