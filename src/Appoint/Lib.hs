@@ -2,31 +2,30 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Appoint.Lib where
 
-import           Appoint.Models          (balanceIssues)
+import           Appoint.Models              (Repo(..), RepoIssues,
+                                              balanceIssues)
 import           Appoint.Types.Config
 import           Control.Lens
-import           Control.Monad.Except    (ExceptT, liftIO, runExceptT,
-                                          throwError)
-import           Control.Monad.IO.Class  (MonadIO)
-import           Control.Monad.Reader    (MonadReader, asks)
-import           Data.Monoid             ((<>))
-import qualified Data.Vector             as V
-import qualified GitHub.Data             as GitHub
-import qualified GitHub.Endpoints.Search as GitHub
-import           System.Exit             (exitFailure)
+import           Control.Monad.Except        (ExceptT, liftIO, runExceptT,
+                                              throwError)
+import           Control.Monad.IO.Class      (MonadIO)
+import           Control.Monad.Reader        (MonadReader, asks)
+import           Data.Monoid                 ((<>))
+import qualified GitHub.Data                 as GitHub
+import qualified GitHub.Endpoints.Search     as GitHub
+import           System.Exit                 (exitFailure)
 
 
 -------------------------------------------------------------------------------
 -- | Search for PRs, save results to db
 refresh
-  :: (MonadIO m, MonadReader AppState m)
+  :: (MonadReader AppState m, MonadIO m)
   => m ()
 refresh = do
   config <- asks appConfig
   result <- runExceptT (searchPrs config)
   case result of
-    Left _
-     -> liftIO exitFailure
+    Left _ -> liftIO exitFailure
     Right issues -> balanceIssues issues
 
 
@@ -38,9 +37,9 @@ newtype SearchError =
 -------------------------------------------------------------------------------
 searchPrs
   :: (MonadIO m)
-  => Config -> ExceptT SearchError m (V.Vector GitHub.Issue)
+  => Config -> ExceptT SearchError m RepoIssues
 searchPrs config = do
-  let owner' = GitHub.untagName $ config ^. cName
+  let owner' = GitHub.untagName $ config ^. cOwner
       repo' = GitHub.untagName $ config ^. cRepo
       auth = config ^. cAuth
   things <-
@@ -49,4 +48,6 @@ searchPrs config = do
     Left err' -> throwError $ SearchError (show err')
     Right results -> do
       let results' = GitHub.searchResultResults results
-      pure results'
+          repo =
+            Repo {uRepoName = RepoName repo', uRepoOwner = RepoOwner owner'}
+      pure (repo, results')

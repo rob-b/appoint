@@ -64,7 +64,7 @@ listPrs = do
   config <- asks appConfig
   let handler = maybe GitHub.pullRequestsFor pullRequestsFor auth
       auth = config ^. cAuth
-      owner = config ^. cName
+      owner = config ^. cOwner
       repo = config ^. cRepo
   prs <- liftIO $ doRequest handler owner repo auth
   -- interactiveAppoint prs config

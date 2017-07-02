@@ -1,11 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts      #-}
 module Appoint.Types.Config where
 
 import           Control.Lens
 import           Control.Monad.Logger    (runNoLoggingT, runStdoutLoggingT)
 import           Control.Monad.Reader
+import Control.Monad.Trans.Control (MonadBaseControl)
 import           Data.Text               (Text)
 import           Database.Persist.Sql    (ConnectionPool)
 import           Database.Persist.Sqlite (createSqlitePool)
@@ -28,7 +30,7 @@ newtype AppT m a = AppT
 
 data Config = Config
   { _cAuth :: Maybe Auth.Auth
-  , _cName :: GitHub.Name GitHub.Owner
+  , _cOwner :: GitHub.Name GitHub.Owner
   , _cRepo :: GitHub.Name GitHub.Repo
   } deriving (Show)
 
@@ -36,19 +38,28 @@ data Config = Config
 makeLenses ''Config
 
 
+newtype RepoName = RepoName
+  { unRepoName :: Text
+  } deriving (Show)
+
+newtype RepoOwner = RepoOwner
+  { unRepoOwner :: Text
+  } deriving (Show)
+
+
 -------------------------------------------------------------------------------
-mkConfig :: Maybe Auth.Auth -> Text -> Text -> Config
-mkConfig auth' name' repo' =
+mkConfig :: Maybe Auth.Auth -> RepoOwner -> RepoName -> Config
+mkConfig auth' owner name =
   Config
   { _cAuth = auth'
-  , _cName = GitHub.mkOwnerName name'
-  , _cRepo = GitHub.mkRepoName repo'
+  , _cOwner = GitHub.mkOwnerName (unRepoOwner owner)
+  , _cRepo = GitHub.mkRepoName (unRepoName name)
   }
 
 
 -------------------------------------------------------------------------------
 -- Create an sqlite db pool. Currently name and size are fixed
-mkPool :: Bool -> IO ConnectionPool
+mkPool :: (MonadBaseControl IO m, MonadIO m) => Bool -> m ConnectionPool
 mkPool verbose =
   if verbose
     then runStdoutLoggingT $ createSqlitePool "pr.sqlite" 1
@@ -56,9 +67,9 @@ mkPool verbose =
 
 
 -------------------------------------------------------------------------------
-mkAppState :: ConnectionPool -> Maybe GitHub.Auth -> Text -> Text -> AppState
-mkAppState pool auth name repo =
-  let conf = mkConfig auth name repo
+mkAppState :: ConnectionPool -> Maybe GitHub.Auth -> RepoOwner -> RepoName -> AppState
+mkAppState pool auth owner repo =
+  let conf = mkConfig auth owner repo
   in AppState {appPool = pool, appConfig = conf, appLogger = print, appVerbose = False}
 
 

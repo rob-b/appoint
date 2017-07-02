@@ -2,10 +2,11 @@
 {-# LANGUAGE OverloadedStrings          #-}
 module Appoint.Cli (main) where
 
-import Appoint.Assign (listPrs)
+import           Appoint.Assign            (listPrs)
 import           Appoint.Entities          (doMigrations)
 import           Appoint.Lib               (refresh)
-import           Appoint.Types.Config      (mkAppState, mkPool, runAppT)
+import           Appoint.Types.Config      (RepoName(..), RepoOwner(..), mkAppState,
+                                            mkPool, runAppT)
 import qualified Data.ByteString.Char8     as BS8
 import           Data.Monoid               ((<>))
 import qualified Data.Text                 as T
@@ -17,8 +18,8 @@ import           System.Environment        (lookupEnv)
 
 
 data RepoIdentity =
-  RepoIdentity T.Text
-               T.Text
+  RepoIdentity RepoOwner
+               RepoName
   deriving (Show)
 
 
@@ -76,8 +77,8 @@ assignParser = Assign <$> repoParser
 -------------------------------------------------------------------------------
 repoParser :: Parser RepoIdentity
 repoParser =
-  RepoIdentity <$> argument readerText (metavar "OWNER") <*>
-  argument readerText (metavar "REPO")
+  RepoIdentity <$> argument readerOwner (metavar "OWNER") <*>
+  argument readerName (metavar "REPO")
 
 
 -------------------------------------------------------------------------------
@@ -89,8 +90,13 @@ getAuth = do
 
 
 -------------------------------------------------------------------------------
-readerText :: ReadM T.Text
-readerText = T.pack <$> readerAsk
+readerOwner :: ReadM RepoOwner
+readerOwner = RepoOwner . T.pack <$> readerAsk
+
+
+-------------------------------------------------------------------------------
+readerName :: ReadM RepoName
+readerName = RepoName . T.pack <$> readerAsk
 
 
 -------------------------------------------------------------------------------

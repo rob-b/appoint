@@ -34,6 +34,7 @@ Issue sql=issues
   updatedAt Text sql=updated_at
   body Text
   state IssueStatus
+  repoId RepoId sql=repo_id
   deriving Show
 
 IssueLabel sql=issue_labels
@@ -45,6 +46,7 @@ Repo sql=repos
   name Text
   owner Text
   externalId Int sql=external_id
+  OwnerName owner name
   deriving Show
 |]
 
@@ -53,7 +55,9 @@ doMigrations :: (MonadIO m) => SqlPersistT m ()
 doMigrations = runMigration migrateAll
 
 
-runDb :: (MonadIO m, MonadReader AppState m) => SqlPersistT IO b -> m b
+runDb
+  :: (MonadIO m, MonadReader AppState m)
+  => SqlPersistT IO b -> m b
 runDb query = do
   pool <- asks appPool
   liftIO $ runSqlPool query pool

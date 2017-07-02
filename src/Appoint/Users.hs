@@ -16,7 +16,7 @@ collaboratorsOn = do
   liftIO $
     GitHub.collaboratorsOn'
       (config ^. cAuth)
-      (config ^. cName)
+      (config ^. cOwner)
       (config ^. cRepo)
 
 mkUser :: GitHub.SimpleUser -> User
